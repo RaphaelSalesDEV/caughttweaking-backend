@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import PyPDF2
+from docx import Document
 import io
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -19,7 +20,49 @@ def extract_text_from_pdf(pdf_file):
             text += page.extract_text()
         return text.strip()
     except Exception as e:
-        print(f"Erro ao extrair texto: {e}")
+        print(f"Erro ao extrair texto do PDF: {e}")
+        return ""
+
+def extract_text_from_docx(docx_file):
+    """Extrai texto de um arquivo Word (.docx)"""
+    try:
+        doc = Document(docx_file)
+        text = ""
+        for paragraph in doc.paragraphs:
+            text += paragraph.text + "\n"
+        return text.strip()
+    except Exception as e:
+        print(f"Erro ao extrair texto do Word: {e}")
+        return ""
+
+def extract_text_from_txt(txt_file):
+    """Extrai texto de um arquivo TXT"""
+    try:
+        content = txt_file.read()
+        # Tentar decodificar com UTF-8, se falhar tentar latin-1
+        try:
+            text = content.decode('utf-8')
+        except UnicodeDecodeError:
+            text = content.decode('latin-1')
+        return text.strip()
+    except Exception as e:
+        print(f"Erro ao extrair texto do TXT: {e}")
+        return ""
+
+def extract_text_from_file(file, filename):
+    """Extrai texto baseado no tipo de arquivo"""
+    file_lower = filename.lower()
+    
+    if file_lower.endswith('.pdf'):
+        return extract_text_from_pdf(file)
+    elif file_lower.endswith('.docx'):
+        return extract_text_from_docx(file)
+    elif file_lower.endswith('.doc'):
+        # .doc antigo não tem suporte direto, mas tentamos como docx
+        return extract_text_from_docx(file)
+    elif file_lower.endswith('.txt'):
+        return extract_text_from_txt(file)
+    else:
         return ""
 
 def calculate_similarity(texts):
@@ -52,7 +95,7 @@ def home():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """Endpoint principal para análise de PDFs"""
+    """Endpoint principal para análise de arquivos"""
     
     # Verificar se arquivos foram enviados
     if 'files' not in request.files:
@@ -66,23 +109,25 @@ def analyze():
     if len(files) > 100:
         return jsonify({"error": "Máximo de 100 arquivos permitidos"}), 400
     
-    # Extrair texto de todos os PDFs
+    # Extrair texto de todos os arquivos
     documents = []
     file_names = []
     
     print(f"Processando {len(files)} arquivos...")
     
     for file in files:
-        if file.filename.endswith('.pdf'):
+        file_extension = file.filename.lower().split('.')[-1]
+        
+        if file_extension in ['pdf', 'docx', 'doc', 'txt']:
             try:
                 # Ler arquivo em memória
-                pdf_content = io.BytesIO(file.read())
-                text = extract_text_from_pdf(pdf_content)
+                file_content = io.BytesIO(file.read())
+                text = extract_text_from_file(file_content, file.filename)
                 
                 if text:
                     documents.append(text)
                     file_names.append(file.filename)
-                    print(f"✓ {file.filename} processado")
+                    print(f"✓ {file.filename} processado ({file_extension.upper()})")
                 else:
                     print(f"✗ {file.filename} - sem texto extraído")
             except Exception as e:
